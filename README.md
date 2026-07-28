@@ -148,11 +148,42 @@ python main.py --test-dingtalk
 
 同时只允许一个任务运行；冲突返回 409。
 
-## Docker 预备
+## Docker 部署
 
-- 数据卷挂载 `DATA_DIR`（如 `/data`）→ `work_report.db`
-- 镜像可多阶段：`npm run build` + Python runtime，启动 `python web_app.py --host 0.0.0.0 --port 6790`
-- 完整 Dockerfile 可按部署环境后续补充
+多阶段构建：Node 编译前端 → Python 运行 Web（托管 `web_dist` + API）。数据目录 `DATA_DIR=/data`，SQLite 文件为 `/data/work_report.db`。
+
+```bash
+# 1. 准备配置（勿提交 .env）
+cp .env.example .env
+# 编辑 .env：GITLAB_* / LLM_* / DINGTALK_* 等
+
+# 2. 构建并启动（宿主机 6790）
+docker compose up -d --build
+
+# 3. 访问
+# 管理端 http://127.0.0.1:6790
+# 健康检查 http://127.0.0.1:6790/api/health
+# API 文档 http://127.0.0.1:6790/docs
+```
+
+常用命令：
+
+```bash
+docker compose logs -f          # 日志
+docker compose restart          # 重启
+docker compose down             # 停止（保留 ./data）
+docker compose exec work-report python main.py --no-dingtalk   # 容器内 CLI
+```
+
+说明：
+
+| 项 | 约定 |
+|----|------|
+| 端口 | `6790:6790` |
+| 数据卷 | `./data` → 容器 `/data`（与本地开发共用同一目录时可直接沿用已有库） |
+| 配置 | `env_file: .env` 注入环境变量；**空库**首次启动 seed 到 SQLite，之后以 Web 配置 / 库为准 |
+| 前端 | 构建阶段 `npm ci && npm run build`，无需本机 Node |
+| 鉴权 | 暂无，仅本机或受信内网 |
 
 ## 说明
 

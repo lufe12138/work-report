@@ -1,0 +1,41 @@
+.git
+.claude
+.venv
+venv
+env
+__pycache__
+**/__pycache__
+*.py[cod]
+*.egg-info
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+htmlcov
+
+# 本地数据与输出（运行时挂卷）
+data
+output
+*.db
+*.log
+
+# 前端依赖与本地构建产物（镜像内重新构建）
+web/node_modules
+web/dist
+web_dist
+
+# 密钥与 IDE（配置通过 compose env_file 注入）
+.env
+.env.local
+.env.*.local
+.idea
+.vscode
+*.swp
+*~
+
+# 文档与杂项（不进镜像）
+*.md
+scripts
+.DS_Store
+Thumbs.db
+Desktop.ini

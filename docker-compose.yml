@@ -1,0 +1,16 @@
+services:
+  work-report:
+    build: .
+    image: work-report:latest
+    container_name: work-report
+    ports:
+      - "6790:6790"
+    environment:
+      DATA_DIR: /data
+    # 空库首次启动会 seed 进 SQLite；之后以库内配置为准
+    env_file:
+      - .env
+    volumes:
+      # SQLite 与运行数据持久化
+      - ./data:/data
+    restart: unless-stopped
