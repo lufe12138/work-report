@@ -42,6 +42,7 @@ data/
 # Frontend
 web/node_modules/
 web/dist/
+web_dist/
 
 # Local tooling
 .claude/

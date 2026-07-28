@@ -21,7 +21,7 @@ work-report/
 ├── project_names.json      # 首次 seed 用项目中文名
 ├── data/                   # SQLite（gitignore）
 ├── web/                    # Vue3 前端源码
-├── web_dist/               # 前端构建产物（FastAPI 托管）
+├── web_dist/               # 前端构建产物（gitignore；FastAPI 托管）
 ├── scripts/                # Windows 定时任务
 └── work_report/
     ├── pipeline.py         # CLI/Web 共用执行流水线
@@ -49,13 +49,14 @@ pip install -r requirements.txt
 cp .env.example .env
 # 编辑 .env：GITLAB_TOKEN、LLM_API_KEY、DINGTALK_* 等
 
-# 4. 前端（可选：已有 web_dist 时可跳过）
+# 4. 前端构建（产物输出到 web_dist/，已 gitignore，需本地或 CI 构建）
 cd web && npm install && npm run build && cd ..
 ```
 
 ## 启动 Web 管理端
 
 ```bash
+# 需先有 web_dist/（上一步 npm run build）
 python web_app.py
 # 默认 http://0.0.0.0:6790
 # 文档 http://127.0.0.1:6790/docs
