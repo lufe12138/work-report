@@ -57,8 +57,8 @@ cd web && npm install && npm run build && cd ..
 
 ```bash
 python web_app.py
-# 默认 http://0.0.0.0:8000
-# 文档 http://127.0.0.1:8000/docs
+# 默认 http://0.0.0.0:6790
+# 文档 http://127.0.0.1:6790/docs
 ```
 
 开发前端热更新：
@@ -68,7 +68,7 @@ python web_app.py
 python web_app.py --reload
 
 # 终端 2
-cd web && npm run dev   # http://127.0.0.1:5173 ，/api 代理到 8000
+cd web && npm run dev   # http://127.0.0.1:5173 ，/api 代理到 6790
 ```
 
 ### 管理页能力
@@ -149,7 +149,7 @@ python main.py --test-dingtalk
 ## Docker 预备
 
 - 数据卷挂载 `DATA_DIR`（如 `/data`）→ `work_report.db`
-- 镜像可多阶段：`npm run build` + Python runtime，启动 `python web_app.py --host 0.0.0.0 --port 8000`
+- 镜像可多阶段：`npm run build` + Python runtime，启动 `python web_app.py --host 0.0.0.0 --port 6790`
 - 完整 Dockerfile 可按部署环境后续补充
 
 ## 说明

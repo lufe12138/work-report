@@ -16,7 +16,7 @@ def main() -> int:
 
     parser = argparse.ArgumentParser(description="启动周报管理 Web 服务")
     parser.add_argument("--host", default="0.0.0.0", help="监听地址")
-    parser.add_argument("--port", type=int, default=8000, help="监听端口")
+    parser.add_argument("--port", type=int, default=6790, help="监听端口")
     parser.add_argument("--reload", action="store_true", help="开发热重载")
     args = parser.parse_args()
 
