@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from work_report.api.deps import DbSession
 from work_report.dingtalk_sender import DingTalkSender
+from work_report.llm_summarizer import LLMSummarizer, PING_PROMPT
 from work_report.services import settings_service
 
 router = APIRouter(tags=["config"])
@@ -65,3 +66,25 @@ def test_dingtalk(db: DbSession) -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"钉钉发送失败: {exc}") from exc
     return {"ok": True, "message": "钉钉测试消息已发送"}
+
+
+@router.post("/config/test-llm")
+def test_llm(db: DbSession) -> dict[str, Any]:
+    try:
+        settings = settings_service.build_settings(db, require_llm=True)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not (settings.llm_api_key or "").strip():
+        raise HTTPException(status_code=400, detail="未配置 llm_api_key")
+    try:
+        reply = LLMSummarizer(settings).ping()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"LLM 调用失败: {exc}") from exc
+    return {
+        "ok": True,
+        "message": "LLM 测活成功",
+        "prompt": PING_PROMPT,
+        "reply": reply,
+        "model": settings.llm_model,
+        "base_url": settings.llm_base_url,
+    }

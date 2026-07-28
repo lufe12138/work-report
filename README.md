@@ -140,6 +140,7 @@ python main.py --test-dingtalk
 | GET | `/api/dashboard` | 仪表盘 |
 | GET/PUT | `/api/config` | 配置 |
 | POST | `/api/config/test-dingtalk` | 测钉钉 |
+| POST | `/api/config/test-llm` | 测 LLM（提示词：计算2+3等于多少） |
 | GET/PUT | `/api/project-names` | 项目名映射 |
 | GET/POST | `/api/runs` | 列表 / 触发（202） |
 | GET | `/api/runs/{id}` | 详情（含 commits、logs、report） |

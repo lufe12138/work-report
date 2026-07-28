@@ -12,6 +12,9 @@ from work_report.gitlab_fetcher import FetchResult
 
 logger = logging.getLogger(__name__)
 
+# LLM 配置页测活提示词
+PING_PROMPT = "计算2+3等于多少"
+
 # 匹配：一、任意标题（project_key） 或 一、project_key
 _SECTION_TITLE_RE = re.compile(
     r"^([一二三四五六七八九十百千]+、)"  # 中文序号
@@ -195,6 +198,25 @@ class LLMSummarizer:
             fetch_result.week_end,
         )
         return text
+
+    def ping(self, prompt: str = PING_PROMPT) -> str:
+        """连通性测活：发一条短提示词，返回模型原文回复。"""
+        logger.info(
+            "LLM 测活: model=%s, base_url=%s, prompt=%s",
+            self.settings.llm_model,
+            self.settings.llm_base_url,
+            prompt,
+        )
+        response = self.client.chat.completions.create(
+            model=self.settings.llm_model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+            max_tokens=64,
+        )
+        content = (response.choices[0].message.content or "").strip()
+        if not content:
+            raise RuntimeError("LLM 返回空内容")
+        return content
 
     def summarize(self, fetch_result: FetchResult) -> str:
         """根据提交结果生成周报正文。"""

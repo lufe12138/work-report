@@ -3,7 +3,8 @@
     <div style="display: flex; justify-content: space-between; margin-bottom: 16px">
       <h3 class="page-title" style="margin: 0">系统配置</h3>
       <div style="display: flex; gap: 8px">
-        <el-button @click="onTestDingtalk" :loading="testing">测试钉钉</el-button>
+        <el-button @click="onTestLlm" :loading="testingLlm">测试 LLM</el-button>
+        <el-button @click="onTestDingtalk" :loading="testingDingtalk">测试钉钉</el-button>
         <el-button type="primary" :loading="saving" @click="onSave">保存</el-button>
       </div>
     </div>
@@ -97,11 +98,12 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
-import { getConfig, testDingtalk, updateConfig } from "../api/client";
+import { getConfig, testDingtalk, testLlm, updateConfig } from "../api/client";
 
 const loading = ref(false);
 const saving = ref(false);
-const testing = ref(false);
+const testingLlm = ref(false);
+const testingDingtalk = ref(false);
 const secrets = reactive<Record<string, { configured: boolean; masked: string }>>({});
 const form = reactive<Record<string, string>>({
   gitlab_url: "",
@@ -159,13 +161,23 @@ async function onSave() {
   }
 }
 
+async function onTestLlm() {
+  testingLlm.value = true;
+  try {
+    const data = await testLlm();
+    ElMessage.success(`LLM 测活成功（${data.model}）：${data.reply}`);
+  } finally {
+    testingLlm.value = false;
+  }
+}
+
 async function onTestDingtalk() {
-  testing.value = true;
+  testingDingtalk.value = true;
   try {
     await testDingtalk();
     ElMessage.success("钉钉测试消息已发送");
   } finally {
-    testing.value = false;
+    testingDingtalk.value = false;
   }
 }
 

@@ -41,6 +41,18 @@ export async function testDingtalk() {
   return data;
 }
 
+export async function testLlm() {
+  const { data } = await client.post("/config/test-llm", null, { timeout: 120000 });
+  return data as {
+    ok: boolean;
+    message: string;
+    prompt: string;
+    reply: string;
+    model: string;
+    base_url: string;
+  };
+}
+
 export async function getProjectNames() {
   const { data } = await client.get("/project-names");
   return data;
