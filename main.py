@@ -12,10 +12,11 @@ from datetime import datetime
 from pathlib import Path
 
 from work_report.config import ROOT_DIR, load_settings
+from work_report.db.session import init_db, session_scope
 from work_report.dingtalk_sender import DingTalkSender
-from work_report.gitlab_fetcher import GitLabFetcher
 from work_report.holiday import check_last_workday_before_holiday
-from work_report.llm_summarizer import LLMSummarizer
+from work_report.pipeline import RunOptions, run_pipeline
+from work_report.services import settings_service
 
 logger = logging.getLogger("main")
 
@@ -36,7 +37,7 @@ def parse_args() -> argparse.Namespace:
         "--env",
         type=str,
         default=None,
-        help="指定 .env 文件路径（默认使用项目根目录 .env）",
+        help="指定 .env 文件路径（默认使用项目根目录 .env；首次会 seed 到 SQLite）",
     )
     parser.add_argument(
         "--output",
@@ -90,50 +91,18 @@ def parse_args() -> argparse.Namespace:
 
 
 def _default_output_path() -> Path:
-    """定时任务默认输出路径：output/weekly-report-YYYY-MM-DD.txt"""
     today = datetime.now().strftime("%Y-%m-%d")
     return ROOT_DIR / "output" / f"weekly-report-{today}.txt"
 
 
 def run_holiday_check(tz_offset_hours: int = 8) -> int:
-    """仅检查节假日，打印 JSON。"""
     result = check_last_workday_before_holiday(tz_offset_hours=tz_offset_hours)
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
     logger.info("%s", result.reason)
     return 0
 
 
-def maybe_send_dingtalk(
-    settings,
-    report_text: str,
-    *,
-    force: bool,
-    disabled: bool,
-    week_start: str | None = None,
-    week_end: str | None = None,
-) -> None:
-    """按配置/参数决定是否发送钉钉。"""
-    if disabled:
-        logger.info("已指定 --no-dingtalk，跳过钉钉发送")
-        return
-
-    sender = DingTalkSender(settings)
-    if not sender.enabled:
-        if force:
-            raise RuntimeError("已指定 --send-dingtalk，但未配置 DINGTALK_WEBHOOK")
-        logger.info("未配置 DINGTALK_WEBHOOK，跳过钉钉发送")
-        return
-
-    # 默认：配置了 webhook 就发；--send-dingtalk 仅用于强制校验配置存在
-    sender.send_weekly_report(
-        report_text,
-        week_start=week_start,
-        week_end=week_end,
-    )
-
-
 def main() -> int:
-    # Windows 控制台 UTF-8
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     if hasattr(sys.stderr, "reconfigure"):
@@ -142,19 +111,29 @@ def main() -> int:
     args = parse_args()
     setup_logging(args.verbose)
 
-    # 仅节假日检查：不依赖 GitLab / LLM 配置
+    # 初始化 DB（空库时从 .env seed）
+    try:
+        init_db()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("初始化数据库失败（将仅影响落库）: %s", exc)
+
     if args.check_holiday:
         try:
-            settings = load_settings(args.env, require_llm=False)
-            tz = settings.timezone_offset_hours
+            with session_scope() as session:
+                raw = settings_service.get_all_settings_map(session)
+                tz = int(raw.get("timezone_offset_hours") or 8)
         except Exception:  # noqa: BLE001
-            tz = 8
+            try:
+                settings = load_settings(args.env, require_llm=False)
+                tz = settings.timezone_offset_hours
+            except Exception:  # noqa: BLE001
+                tz = 8
         return run_holiday_check(tz)
 
-    # 钉钉连通性测试
     if args.test_dingtalk:
         try:
-            settings = load_settings(args.env, require_llm=False)
+            with session_scope() as session:
+                settings = settings_service.build_settings(session, require_llm=False)
         except ValueError as exc:
             logger.error("%s", exc)
             return 1
@@ -173,71 +152,56 @@ def main() -> int:
             logger.error("钉钉测试失败: %s", exc)
             return 3
 
-    try:
-        settings = load_settings(args.env, require_llm=not args.skip_llm)
-    except ValueError as exc:
-        logger.error("%s", exc)
-        return 1
+    # 发送策略：默认发（若已配置）；--no-dingtalk 禁用；--send-dingtalk 仅强制要求已配置
+    send_dingtalk = not args.no_dingtalk
+    if args.send_dingtalk:
+        send_dingtalk = True
 
-    # 定时任务入口：先判断是否放假前最后一个工作日
-    if args.if_last_workday:
-        holiday = check_last_workday_before_holiday(
-            tz_offset_hours=settings.timezone_offset_hours
-        )
-        logger.info(
-            "节假日判断: 今天 %s(%s) 工作日=%s, 明天 %s(%s) 工作日=%s → %s",
-            holiday.today,
-            holiday.today_weekday,
-            holiday.today_is_workday,
-            holiday.tomorrow,
-            holiday.tomorrow_weekday,
-            holiday.tomorrow_is_workday,
-            holiday.reason,
-        )
-        if not holiday.is_last_workday_before_holiday:
-            logger.info("跳过周报生成")
-            return 0
-
-    fetcher = GitLabFetcher(settings)
-    fetch_result = fetcher.fetch_week_commits()
-
-    if fetch_result.errors:
-        for err in fetch_result.errors:
-            logger.warning("拉取时出现错误: %s", err)
-
-    logger.info(
-        "拉取完成: 共 %s 条提交，涉及 %s 个项目",
-        fetch_result.total_commits,
-        len(fetch_result.projects),
+    trigger = "schedule" if args.if_last_workday else "cli"
+    options = RunOptions(
+        skip_llm=args.skip_llm,
+        send_dingtalk=send_dingtalk,
+        if_last_workday=args.if_last_workday,
+        trigger=trigger,
     )
 
-    if args.skip_llm:
-        report_text = fetch_result.to_prompt_text()
-    else:
-        try:
-            summarizer = LLMSummarizer(settings)
-            report_text = summarizer.summarize(fetch_result)
-        except Exception as exc:  # noqa: BLE001
-            logger.error("LLM 生成周报失败: %s", exc)
-            return 2
+    try:
+        result = run_pipeline(options)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("执行失败: %s", exc)
+        return 2
 
+    logger.info(
+        "运行完成: run_id=%s status=%s commits=%s",
+        result.run_id,
+        result.status,
+        result.total_commits,
+    )
+
+    if result.status == "skipped":
+        logger.info("已跳过: %s", result.error_message)
+        return 0
+
+    if result.status == "failed":
+        logger.error("任务失败: %s", result.error_message)
+        return 2
+
+    report_text = result.report_text
     if args.json:
         payload = {
+            "run_id": result.run_id,
             "generated_at": datetime.now().isoformat(timespec="seconds"),
-            "week_start": fetch_result.week_start,
-            "week_end": fetch_result.week_end,
-            "total_commits": fetch_result.total_commits,
-            "projects": fetch_result.projects,
-            "errors": fetch_result.errors,
+            "week_start": result.week_start,
+            "week_end": result.week_end,
+            "total_commits": result.total_commits,
+            "status": result.status,
+            "dingtalk_sent": result.dingtalk_sent,
             "report": report_text,
         }
         output = json.dumps(payload, ensure_ascii=False, indent=2)
-        dingtalk_body = report_text  # 钉钉仍发纯文本周报
     else:
         output = report_text
-        dingtalk_body = report_text
 
-    # 定时任务未指定 -o 时，自动落到 output/
     out_path: Path | None
     if args.output:
         out_path = Path(args.output)
@@ -254,19 +218,6 @@ def main() -> int:
             print(output)
     else:
         print(output)
-
-    try:
-        maybe_send_dingtalk(
-            settings,
-            dingtalk_body,
-            force=args.send_dingtalk,
-            disabled=args.no_dingtalk,
-            week_start=fetch_result.week_start,
-            week_end=fetch_result.week_end,
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.error("钉钉发送失败: %s", exc)
-        return 3
 
     return 0
 

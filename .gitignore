@@ -36,3 +36,12 @@ Desktop.ini
 # Output / runtime
 output/
 *.log
+data/
+*.db
+
+# Frontend
+web/node_modules/
+web/dist/
+
+# Local tooling
+.claude/
