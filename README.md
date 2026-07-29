@@ -158,6 +158,7 @@ cp .env.example .env
 # 编辑 .env：GITLAB_* / LLM_* / DINGTALK_* 等
 
 # 2. 构建并启动（宿主机 6790）
+# 基础镜像默认从 DaoCloud 拉（避免直连 docker.io 失败）
 docker compose up -d --build
 
 # 3. 访问
@@ -175,6 +176,27 @@ docker compose down             # 停止（保留 ./data）
 docker compose exec work-report python main.py --no-dingtalk   # 容器内 CLI
 ```
 
+### 构建拉基础镜像失败时
+
+错误类似 `failed to resolve source metadata for docker.io/library/python:3.12-slim` 时，说明访问 Docker Hub 受阻。本仓库 **默认** 使用：
+
+- `docker.m.daocloud.io/library/node:20-alpine`
+- `docker.m.daocloud.io/library/python:3.12-slim`
+
+可在 `.env` 覆盖，例如换 [status.anye.xyz](https://status.anye.xyz/) 上其它可用前缀：
+
+```bash
+# .env 示例
+NODE_IMAGE=docker.1ms.run/library/node:20-alpine
+PYTHON_IMAGE=docker.1ms.run/library/python:3.12-slim
+```
+
+网络良好要走官方 Hub：
+
+```bash
+NODE_IMAGE=node:20-alpine PYTHON_IMAGE=python:3.12-slim docker compose up -d --build
+```
+
 说明：
 
 | 项 | 约定 |
@@ -183,6 +205,8 @@ docker compose exec work-report python main.py --no-dingtalk   # 容器内 CLI
 | 数据卷 | `./data` → 容器 `/data`（与本地开发共用同一目录时可直接沿用已有库） |
 | 配置 | `env_file: .env` 注入环境变量；**空库**首次启动 seed 到 SQLite，之后以 Web 配置 / 库为准 |
 | 前端 | 构建阶段 `npm ci && npm run build`，无需本机 Node |
+| 基础镜像 | 默认 DaoCloud 代理；可用 `NODE_IMAGE` / `PYTHON_IMAGE` 覆盖 |
+| npm / pip | 构建默认 npmmirror + 清华 PyPI；可用 build-arg `NPM_REGISTRY` / `PIP_INDEX_URL` 覆盖 |
 | 鉴权 | 暂无，仅本机或受信内网 |
 
 ## 说明

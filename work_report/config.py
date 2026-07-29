@@ -45,7 +45,7 @@ class Settings:
         """
         返回周报用的项目展示名。
 
-        有映射: 示例业务数据统计（example_backend）
+        有映射: 示例后端服务（example_backend）
         无映射: example_backend
         """
         zh = self.project_name_map.get(project_name, "").strip()
@@ -79,7 +79,7 @@ def load_project_name_map(path: str | Path | None = None) -> dict[str, str]:
 
     文件格式（JSON 对象）::
         {
-          "example_backend": "示例业务数据统计",
+          "example_backend": "示例后端服务",
           "example_frontend": "示例前端应用"
         }
     """
