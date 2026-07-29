@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, Index
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
+from work_report.timeutil import utcnow
+
 
 def utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    """兼容旧名：实际写入 Asia/Shanghai 本地 naive 时间。"""
+    return utcnow()
 
 
 class Base(DeclarativeBase):

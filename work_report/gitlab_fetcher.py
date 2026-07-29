@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any
 
 import requests
 
 from work_report.config import Settings
+from work_report.timeutil import format_datetime, tz_from_offset_hours
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +108,8 @@ class GitLabFetcher:
         self.settings = settings
         self.session = session or requests.Session()
         self.session.headers.update({"PRIVATE-TOKEN": settings.gitlab_token})
-        self.tz = timezone(timedelta(hours=settings.timezone_offset_hours))
+        # 业务展示与「本周」边界统一按配置偏移；默认 8 = Asia/Shanghai
+        self.tz = tz_from_offset_hours(settings.timezone_offset_hours)
 
     def _url(self, path: str) -> str:
         return f"{self.settings.gitlab_url}/api/v4{path}"
@@ -159,6 +161,7 @@ class GitLabFetcher:
             name = (c.get("author_name") or "").lower()
             if author not in email and author not in name:
                 continue
+            raw_created = c.get("created_at", "") or ""
             result.append(
                 CommitInfo(
                     short_id=c.get("short_id", ""),
@@ -166,7 +169,7 @@ class GitLabFetcher:
                     message=(c.get("message") or "").strip(),
                     author_name=c.get("author_name", ""),
                     author_email=c.get("author_email", ""),
-                    created_at=c.get("created_at", ""),
+                    created_at=format_datetime(raw_created) or raw_created,
                     project_id=project_id,
                     project_name=project_name,
                 )
@@ -175,20 +178,24 @@ class GitLabFetcher:
 
     @staticmethod
     def _fmt_display(dt: datetime) -> str:
-        """日志/展示用时间：2026-07-27 17:37:42"""
-        return dt.strftime("%Y-%m-%d %H:%M:%S")
+        """日志/展示用时间：2026-07-27 17:37:42（上海）"""
+        return format_datetime(dt)
 
     def current_week_range(
         self, now: datetime | None = None
     ) -> tuple[str, str, datetime, datetime]:
         """
-        返回本周一 00:00 到当前时间。
+        返回本周一 00:00 到当前时间（业务时区，默认 Asia/Shanghai）。
 
         返回:
             (since_iso, until_iso, week_start_dt, now_dt)
             ISO 字符串供 GitLab API 使用。
         """
         now = now or datetime.now(self.tz)
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=self.tz)
+        else:
+            now = now.astimezone(self.tz)
         # weekday: Monday=0 ... Sunday=6
         week_start = now - timedelta(days=now.weekday())
         week_start = week_start.replace(hour=0, minute=0, second=0, microsecond=0)

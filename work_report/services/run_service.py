@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import threading
-from datetime import datetime
 from typing import Any
 
 from sqlalchemy import func, select
@@ -12,6 +11,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from work_report.db.models import Run, RunCommit, RunLog
 from work_report.db.session import get_session_factory
+from work_report.timeutil import format_datetime, format_maybe
 
 # 进程内单任务锁
 _run_lock = threading.Lock()
@@ -26,27 +26,21 @@ def get_running_id() -> int | None:
     return _running_id
 
 
-def _serialize_dt(value: datetime | None) -> str | None:
-    if value is None:
-        return None
-    return value.isoformat(timespec="seconds")
-
-
 def run_to_summary(run: Run) -> dict[str, Any]:
     return {
         "id": run.id,
         "trigger": run.trigger,
         "status": run.status,
-        "week_start": run.week_start,
-        "week_end": run.week_end,
+        "week_start": format_maybe(run.week_start) or run.week_start,
+        "week_end": format_maybe(run.week_end) or run.week_end,
         "total_commits": run.total_commits,
         "project_count": run.project_count,
         "dingtalk_sent": bool(run.dingtalk_sent),
         "error_message": run.error_message,
         "holiday_reason": run.holiday_reason,
-        "started_at": _serialize_dt(run.started_at),
-        "finished_at": _serialize_dt(run.finished_at),
-        "created_at": _serialize_dt(run.created_at),
+        "started_at": format_maybe(run.started_at),
+        "finished_at": format_maybe(run.finished_at),
+        "created_at": format_maybe(run.created_at),
     }
 
 
@@ -71,7 +65,7 @@ def run_to_detail(run: Run) -> dict[str, Any]:
                     "message": c.message,
                     "author_name": c.author_name,
                     "author_email": c.author_email,
-                    "created_at": c.commit_created_at,
+                    "created_at": format_datetime(c.commit_created_at) or c.commit_created_at,
                 }
                 for c in run.commits
             ],
@@ -80,7 +74,7 @@ def run_to_detail(run: Run) -> dict[str, Any]:
                     "id": log.id,
                     "level": log.level,
                     "message": log.message,
-                    "created_at": _serialize_dt(log.created_at),
+                    "created_at": format_maybe(log.created_at),
                 }
                 for log in run.logs
             ],
