@@ -7,12 +7,7 @@ from datetime import datetime
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, Index
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-from work_report.timeutil import utcnow
-
-
-def utcnow() -> datetime:
-    """兼容旧名：实际写入 Asia/Shanghai 本地 naive 时间。"""
-    return utcnow()
+from work_report.timeutil import now_naive as utcnow
 
 
 class Base(DeclarativeBase):
