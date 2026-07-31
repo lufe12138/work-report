@@ -208,8 +208,7 @@ onMounted(load);
         <el-input v-model="form.schedule_days" placeholder="Mon,Tue,Wed,Thu,Fri" />
       </el-form-item>
       <p class="muted">
-        定时时间/星期用于 Windows 计划任务脚本；修改后需重新运行
-        scripts/install_scheduled_task.ps1。Web 端可随时手动触发运行。
+        定时任务由 Web 服务内置的 Python 调度器执行；保存后立即更新，无需操作系统计划任务。
       </p>
     </el-form>
   </div>

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -11,12 +13,29 @@ from fastapi.staticfiles import StaticFiles
 
 from work_report.config import ROOT_DIR
 from work_report.db.session import init_db
+from work_report.services.scheduler_service import (
+    shutdown_scheduler,
+    start_scheduler,
+)
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    start_scheduler()
+    try:
+        yield
+    finally:
+        shutdown_scheduler()
 
 
 def create_app() -> FastAPI:
     init_db()
 
-    app = FastAPI(title="Work Report Admin", version="1.0.0")
+    app = FastAPI(
+        title="Work Report Admin",
+        version="1.0.0",
+        lifespan=_lifespan,
+    )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],

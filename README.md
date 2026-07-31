@@ -1,13 +1,14 @@
 # work-report
 
-从 GitLab 拉取本周提交，调用 LLM 归纳生成周报；支持 CLI、Windows 定时任务，以及 **Web 管理端**（配置 / 运行历史 / 一键触发）。
+从 GitLab 拉取本周提交，调用 LLM 归纳生成周报；支持 CLI、跨平台 Python 定时调度，以及 **Web 管理端**（配置 / 运行历史 / 一键触发）。
 
 ## 功能概览
 
 - 拉取 GitLab 本周提交（按作者邮箱过滤）
 - LLM 按项目归纳周报 + 下周计划（强制项目中文名）
 - 可选钉钉群机器人推送
-- 放假前最后工作日门控（离线 2026 节假日日历）
+- 放假前最后工作日门控
+- Web 服务内置 APScheduler，支持 Linux、macOS、Windows 和 Docker
 - **管理后台**：Nginx Proxy Manager 风格侧栏；配置可视化；每次运行记录提交明细、日志、周报正文
 - **SQLite** 持久化（`data/work_report.db`），便于后续 Docker 挂卷
 
@@ -22,7 +23,6 @@ work-report/
 ├── data/                   # SQLite（gitignore）
 ├── web/                    # Vue3 前端源码
 ├── web_dist/               # 前端构建产物（gitignore；FastAPI 托管）
-├── scripts/                # Windows 定时任务
 └── work_report/
     ├── pipeline.py         # CLI/Web 共用执行流水线
     ├── db/                 # SQLAlchemy + seed
@@ -40,7 +40,10 @@ work-report/
 ```bash
 # 1. 虚拟环境
 python -m venv .venv
-source .venv/Scripts/activate   # Windows Git Bash
+# Linux / macOS
+source .venv/bin/activate
+# Windows PowerShell
+.\.venv\Scripts\Activate.ps1
 
 # 2. Python 依赖
 pip install -r requirements.txt
@@ -71,6 +74,8 @@ python web_app.py --reload
 # 终端 2
 cd web && npm run dev   # http://127.0.0.1:5173 ，/api 代理到 6790
 ```
+
+Web 服务启动后会自动加载 SQLite 中的定时时间、星期和时区配置。
 
 ### 管理页能力
 
@@ -116,7 +121,7 @@ python main.py --test-dingtalk
 | `PROJECT_IDS` / `project_ids` | 项目 ID，逗号分隔 |
 | `LLM_*` | OpenAI 兼容接口 |
 | `DINGTALK_*` | 群机器人 Webhook / 加签 |
-| `SCHEDULE_TIME` / `SCHEDULE_DAYS` | Windows 计划任务参考（改后需重装任务） |
+| `SCHEDULE_TIME` / `SCHEDULE_DAYS` | 内置 Python 调度器的执行时间与星期 |
 | `DATA_DIR` | SQLite 目录 |
 
 ### 项目中文名
@@ -124,14 +129,11 @@ python main.py --test-dingtalk
 可在 Web「项目名称」维护，或编辑 `project_names.json` 后在**空库**时 seed。  
 周报一级标题会校正为：`中文名（gitlab_project_name）`。
 
-## Windows 定时任务
+## 跨平台定时任务
 
-```powershell
-# 以管理员 PowerShell
-.\scripts\install_scheduled_task.ps1
-```
+定时任务由 Web 服务进程内的 APScheduler 执行。系统配置保存后会立即刷新调度计划，无需安装操作系统任务。
 
-任务调用 `scripts/run_scheduled.bat` → `python main.py --if-last-workday`。
+默认在周一至周五 17:30 触发，并在执行前判断当天是否为放假前最后一个工作日。Docker、Linux、macOS 和 Windows 使用相同实现。
 
 ## API 摘要
 

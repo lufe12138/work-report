@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, field_validator
 from work_report.api.deps import DbSession
 from work_report.dingtalk_sender import DingTalkSender
 from work_report.llm_summarizer import LLMSummarizer, PING_PROMPT
-from work_report.services import settings_service
+from work_report.services import scheduler_service, settings_service
 
 router = APIRouter(tags=["config"])
 
@@ -39,6 +39,30 @@ class ConfigUpdate(BaseModel):
             raise ValueError("周报提示词不能为空")
         return value
 
+    @field_validator("schedule_time")
+    @classmethod
+    def validate_schedule_time(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return scheduler_service.normalize_schedule_time(value)
+
+    @field_validator("schedule_days")
+    @classmethod
+    def validate_schedule_days(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return scheduler_service.normalize_schedule_days(value)
+
+    @field_validator("timezone_offset_hours")
+    @classmethod
+    def validate_timezone_offset(
+        cls,
+        value: str | int | None,
+    ) -> str | int | None:
+        if value is None:
+            return None
+        return scheduler_service.normalize_timezone_offset(value)
+
 
 @router.get("/config")
 def get_config(db: DbSession) -> dict[str, Any]:
@@ -54,7 +78,12 @@ def put_config(body: ConfigUpdate, db: DbSession) -> dict[str, Any]:
         if v is None:
             continue
         normalized[k] = str(v).strip() if not isinstance(v, str) else v
-    return settings_service.update_settings(db, normalized)
+    current = settings_service.get_all_settings_map(db)
+    scheduler_service.parse_schedule_config({**current, **normalized})
+    result = settings_service.update_settings(db, normalized)
+    db.commit()
+    scheduler_service.reload_schedule()
+    return result
 
 
 @router.post("/config/test-dingtalk")
