@@ -10,6 +10,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from work_report.default_prompts import DEFAULT_WEEKLY_REPORT_PROMPT
+
 # 项目根目录（work-report/）
 ROOT_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_PROJECT_NAMES_FILE = ROOT_DIR / "project_names.json"
@@ -30,6 +32,7 @@ class Settings:
     llm_base_url: str
     llm_model: str
     llm_timeout: int
+    llm_system_prompt: str
 
     timezone_offset_hours: int
 
@@ -135,6 +138,10 @@ def load_settings(
         llm_base_url=os.getenv("LLM_BASE_URL", "https://api.openai.com/v1").rstrip("/"),
         llm_model=os.getenv("LLM_MODEL", "gpt-4o-mini"),
         llm_timeout=int(os.getenv("LLM_TIMEOUT", "120")),
+        llm_system_prompt=(
+            os.getenv("LLM_SYSTEM_PROMPT", "").strip()
+            or DEFAULT_WEEKLY_REPORT_PROMPT
+        ),
         timezone_offset_hours=int(os.getenv("TIMEZONE_OFFSET_HOURS", "8")),
         dingtalk_webhook=os.getenv("DINGTALK_WEBHOOK", "").strip(),
         dingtalk_secret=os.getenv("DINGTALK_SECRET", "").strip(),

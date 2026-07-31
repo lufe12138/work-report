@@ -1,18 +1,132 @@
+<script setup lang="ts">
+import { onMounted, reactive, shallowRef } from "vue";
+import { ElMessage } from "element-plus";
+import { getConfig, testDingtalk, testLlm, updateConfig } from "../api/client";
+import MarkdownPromptEditor from "../components/config/MarkdownPromptEditor.vue";
+
+interface ConfigForm {
+  gitlab_url: string;
+  gitlab_token: string;
+  author_email: string;
+  project_ids: string;
+  llm_api_key: string;
+  llm_base_url: string;
+  llm_model: string;
+  llm_timeout: string;
+  llm_system_prompt: string;
+  dingtalk_webhook: string;
+  dingtalk_secret: string;
+  dingtalk_timeout: string;
+  timezone_offset_hours: string;
+  schedule_time: string;
+  schedule_days: string;
+}
+
+const loading = shallowRef(false);
+const saving = shallowRef(false);
+const testingLlm = shallowRef(false);
+const testingDingtalk = shallowRef(false);
+const secrets = reactive<Record<string, { configured: boolean; masked: string }>>({});
+const form = reactive<ConfigForm>({
+  gitlab_url: "",
+  gitlab_token: "",
+  author_email: "",
+  project_ids: "",
+  llm_api_key: "",
+  llm_base_url: "",
+  llm_model: "",
+  llm_timeout: "",
+  llm_system_prompt: "",
+  dingtalk_webhook: "",
+  dingtalk_secret: "",
+  dingtalk_timeout: "",
+  timezone_offset_hours: "",
+  schedule_time: "",
+  schedule_days: "",
+});
+
+function secretPlaceholder(key: string) {
+  const secret = secrets[key];
+  if (secret?.configured) return `已配置 ${secret.masked}，留空不修改`;
+  return "未配置";
+}
+
+async function load() {
+  loading.value = true;
+  try {
+    const data = await getConfig();
+    for (const key of Object.keys(form) as Array<keyof ConfigForm>) {
+      const value = data[key];
+      if (value && typeof value === "object" && "configured" in value) {
+        secrets[key] = value;
+        form[key] = "";
+      } else {
+        form[key] = String(value ?? "");
+      }
+    }
+  } finally {
+    loading.value = false;
+  }
+}
+
+async function onSave() {
+  if (!form.llm_system_prompt.trim()) {
+    ElMessage.warning("周报提示词不能为空");
+    return;
+  }
+
+  saving.value = true;
+  try {
+    await updateConfig({ ...form });
+    ElMessage.success("配置已保存");
+    await load();
+  } finally {
+    saving.value = false;
+  }
+}
+
+async function onTestLlm() {
+  testingLlm.value = true;
+  try {
+    const data = await testLlm();
+    ElMessage.success(`LLM 测活成功（${data.model}）：${data.reply}`);
+  } finally {
+    testingLlm.value = false;
+  }
+}
+
+async function onTestDingtalk() {
+  testingDingtalk.value = true;
+  try {
+    await testDingtalk();
+    ElMessage.success("钉钉测试消息已发送");
+  } finally {
+    testingDingtalk.value = false;
+  }
+}
+
+onMounted(load);
+</script>
+
 <template>
   <div class="page-card" v-loading="loading">
-    <div style="display: flex; justify-content: space-between; margin-bottom: 16px">
-      <h3 class="page-title" style="margin: 0">系统配置</h3>
-      <div style="display: flex; gap: 8px">
-        <el-button @click="onTestLlm" :loading="testingLlm">测试 LLM</el-button>
-        <el-button @click="onTestDingtalk" :loading="testingDingtalk">测试钉钉</el-button>
-        <el-button type="primary" :loading="saving" @click="onSave">保存</el-button>
+    <div class="config-header">
+      <h3 class="page-title config-title">系统配置</h3>
+      <div class="config-actions">
+        <el-button :loading="testingLlm" @click="onTestLlm">测试 LLM</el-button>
+        <el-button :loading="testingDingtalk" @click="onTestDingtalk">
+          测试钉钉
+        </el-button>
+        <el-button type="primary" :loading="saving" @click="onSave">
+          保存
+        </el-button>
       </div>
     </div>
-    <p class="muted" style="margin-top: 0">
+    <p class="muted config-note">
       密钥类字段已配置时显示脱敏值；留空保存表示不修改。配置保存在 SQLite，优先于仅作首次导入的 .env。
     </p>
 
-    <el-form label-width="140px" style="max-width: 820px">
+    <el-form label-width="140px" class="config-form">
       <el-divider content-position="left">GitLab</el-divider>
       <el-form-item label="GitLab URL">
         <el-input v-model="form.gitlab_url" placeholder="http://gitlab.example.com" />
@@ -55,6 +169,12 @@
       <el-form-item label="Timeout (秒)">
         <el-input v-model="form.llm_timeout" />
       </el-form-item>
+      <el-form-item label="周报提示词" class="prompt-form-item">
+        <MarkdownPromptEditor
+          v-model="form.llm_system_prompt"
+          :disabled="loading || saving"
+        />
+      </el-form-item>
 
       <el-divider content-position="left">钉钉</el-divider>
       <el-form-item label="Webhook">
@@ -95,91 +215,33 @@
   </div>
 </template>
 
-<script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
-import { ElMessage } from "element-plus";
-import { getConfig, testDingtalk, testLlm, updateConfig } from "../api/client";
-
-const loading = ref(false);
-const saving = ref(false);
-const testingLlm = ref(false);
-const testingDingtalk = ref(false);
-const secrets = reactive<Record<string, { configured: boolean; masked: string }>>({});
-const form = reactive<Record<string, string>>({
-  gitlab_url: "",
-  gitlab_token: "",
-  author_email: "",
-  project_ids: "",
-  llm_api_key: "",
-  llm_base_url: "",
-  llm_model: "",
-  llm_timeout: "",
-  dingtalk_webhook: "",
-  dingtalk_secret: "",
-  dingtalk_timeout: "",
-  timezone_offset_hours: "",
-  schedule_time: "",
-  schedule_days: "",
-});
-
-function secretPlaceholder(key: string) {
-  const s = secrets[key];
-  if (s?.configured) return `已配置 ${s.masked}，留空不修改`;
-  return "未配置";
+<style scoped>
+.config-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
 }
 
-async function load() {
-  loading.value = true;
-  try {
-    const data = await getConfig();
-    for (const key of Object.keys(form)) {
-      const val = data[key];
-      if (val && typeof val === "object" && "configured" in val) {
-        secrets[key] = val;
-        form[key] = "";
-      } else {
-        form[key] = val ?? "";
-      }
-    }
-  } finally {
-    loading.value = false;
-  }
+.config-title,
+.config-note {
+  margin-top: 0;
 }
 
-async function onSave() {
-  saving.value = true;
-  try {
-    const payload: Record<string, string> = {};
-    for (const [k, v] of Object.entries(form)) {
-      payload[k] = v;
-    }
-    await updateConfig(payload);
-    ElMessage.success("配置已保存");
-    await load();
-  } finally {
-    saving.value = false;
-  }
+.config-title {
+  margin-bottom: 0;
 }
 
-async function onTestLlm() {
-  testingLlm.value = true;
-  try {
-    const data = await testLlm();
-    ElMessage.success(`LLM 测活成功（${data.model}）：${data.reply}`);
-  } finally {
-    testingLlm.value = false;
-  }
+.config-actions {
+  display: flex;
+  gap: 8px;
 }
 
-async function onTestDingtalk() {
-  testingDingtalk.value = true;
-  try {
-    await testDingtalk();
-    ElMessage.success("钉钉测试消息已发送");
-  } finally {
-    testingDingtalk.value = false;
-  }
+.config-form {
+  max-width: 1080px;
 }
 
-onMounted(load);
-</script>
+.prompt-form-item :deep(.el-form-item__content) {
+  display: block;
+}
+</style>

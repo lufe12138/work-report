@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from work_report.api.deps import DbSession
 from work_report.dingtalk_sender import DingTalkSender
@@ -24,12 +24,20 @@ class ConfigUpdate(BaseModel):
     llm_base_url: str | None = None
     llm_model: str | None = None
     llm_timeout: str | int | None = None
+    llm_system_prompt: str | None = Field(default=None, max_length=50_000)
     timezone_offset_hours: str | int | None = None
     dingtalk_webhook: str | None = None
     dingtalk_secret: str | None = None
     dingtalk_timeout: str | int | None = None
     schedule_time: str | None = None
     schedule_days: str | None = None
+
+    @field_validator("llm_system_prompt")
+    @classmethod
+    def validate_llm_system_prompt(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("周报提示词不能为空")
+        return value
 
 
 @router.get("/config")

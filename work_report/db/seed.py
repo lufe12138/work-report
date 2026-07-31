@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from work_report.config import DEFAULT_PROJECT_NAMES_FILE, ROOT_DIR, load_project_name_map
 from work_report.db.models import AppSetting, Holiday, ProjectName, utcnow
+from work_report.default_prompts import DEFAULT_WEEKLY_REPORT_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,7 @@ SETTING_KEYS = [
     "llm_base_url",
     "llm_model",
     "llm_timeout",
+    "llm_system_prompt",
     "timezone_offset_hours",
     "dingtalk_webhook",
     "dingtalk_secret",
@@ -43,6 +45,7 @@ ENV_KEY_MAP = {
     "llm_base_url": "LLM_BASE_URL",
     "llm_model": "LLM_MODEL",
     "llm_timeout": "LLM_TIMEOUT",
+    "llm_system_prompt": "LLM_SYSTEM_PROMPT",
     "timezone_offset_hours": "TIMEZONE_OFFSET_HOURS",
     "dingtalk_webhook": "DINGTALK_WEBHOOK",
     "dingtalk_secret": "DINGTALK_SECRET",
@@ -55,6 +58,7 @@ DEFAULTS = {
     "llm_base_url": "https://api.openai.com/v1",
     "llm_model": "gpt-4o-mini",
     "llm_timeout": "120",
+    "llm_system_prompt": DEFAULT_WEEKLY_REPORT_PROMPT,
     "timezone_offset_hours": "8",
     "dingtalk_timeout": "15",
     "schedule_time": "17:30",

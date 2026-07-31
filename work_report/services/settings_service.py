@@ -125,6 +125,10 @@ def build_settings(session: Session, *, require_llm: bool = True) -> Settings:
         llm_base_url=(raw.get("llm_base_url") or DEFAULTS["llm_base_url"]).rstrip("/"),
         llm_model=raw.get("llm_model") or DEFAULTS["llm_model"],
         llm_timeout=int(raw.get("llm_timeout") or DEFAULTS["llm_timeout"]),
+        llm_system_prompt=(
+            raw.get("llm_system_prompt")
+            or DEFAULTS["llm_system_prompt"]
+        ),
         timezone_offset_hours=int(
             raw.get("timezone_offset_hours") or DEFAULTS["timezone_offset_hours"]
         ),
