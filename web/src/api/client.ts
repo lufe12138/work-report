@@ -107,6 +107,17 @@ interface HolidayListResponse {
   items: HolidayItem[];
 }
 
+interface HolidaySyncResponse extends HolidayListResponse {
+  year: number;
+  source_url: string;
+  count: number;
+}
+
+interface HolidayCleanupResponse extends HolidayListResponse {
+  cutoff_date: string;
+  deleted: number;
+}
+
 export async function getHolidays(): Promise<HolidayListResponse> {
   const { data } = await client.get("/holidays");
   return data as HolidayListResponse;
@@ -115,6 +126,16 @@ export async function getHolidays(): Promise<HolidayListResponse> {
 export async function saveHolidays(items: HolidayItem[]): Promise<HolidayListResponse> {
   const { data } = await client.put("/holidays", { items });
   return data as HolidayListResponse;
+}
+
+export async function syncOfficialHolidays(year: number): Promise<HolidaySyncResponse> {
+  const { data } = await client.post("/holidays/sync-official", { year });
+  return data as HolidaySyncResponse;
+}
+
+export async function deletePastHolidays(): Promise<HolidayCleanupResponse> {
+  const { data } = await client.delete("/holidays/past");
+  return data as HolidayCleanupResponse;
 }
 
 export async function deleteHoliday(date: string) {

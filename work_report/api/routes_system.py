@@ -11,6 +11,12 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from work_report.api.deps import DbSession
 from work_report.holiday import check_last_workday_before_holiday
 from work_report.services import run_service, settings_service
+from work_report.services.holiday_sync_service import (
+    OfficialHolidayNotFoundError,
+    OfficialHolidaySyncError,
+    fetch_official_holiday_schedule,
+)
+from work_report.timeutil import now
 
 router = APIRouter(tags=["system"])
 
@@ -90,6 +96,10 @@ class HolidayList(BaseModel):
         return self
 
 
+class HolidaySyncRequest(BaseModel):
+    year: int = Field(ge=2000, le=2100)
+
+
 @router.get("/holidays")
 def get_holidays(db: DbSession) -> dict:
     return {"items": settings_service.list_holidays(db)}
@@ -110,6 +120,39 @@ def post_holiday(body: HolidayItem, db: DbSession) -> dict:
         body.is_makeup,
     )
     return {"ok": True, "item": body.model_dump()}
+
+
+@router.post("/holidays/sync-official")
+def sync_official_holidays(body: HolidaySyncRequest, db: DbSession) -> dict:
+    try:
+        schedule = fetch_official_holiday_schedule(body.year)
+    except OfficialHolidayNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except OfficialHolidaySyncError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    items = settings_service.save_holidays_for_year(
+        db,
+        schedule.year,
+        schedule.items,
+    )
+    return {
+        "year": schedule.year,
+        "source_url": schedule.source_url,
+        "count": len(schedule.items),
+        "items": items,
+    }
+
+
+@router.delete("/holidays/past")
+def delete_past_holidays(db: DbSession) -> dict:
+    cutoff_date = now().date().isoformat()
+    deleted = settings_service.delete_holidays_before(db, cutoff_date)
+    return {
+        "cutoff_date": cutoff_date,
+        "deleted": deleted,
+        "items": settings_service.list_holidays(db),
+    }
 
 
 @router.delete("/holidays/{date}")

@@ -245,3 +245,43 @@ def save_holidays(
             )
     session.flush()
     return list_holidays(session)
+
+
+def save_holidays_for_year(
+    session: Session,
+    year: int,
+    items: list[dict[str, str | bool]],
+) -> list[dict[str, str | bool]]:
+    """替换指定年份的节假日，保留其他年份。"""
+    year_prefix = f"{year:04d}-"
+    existing = session.scalars(
+        select(Holiday).where(Holiday.date.like(f"{year_prefix}%"))
+    ).all()
+    for row in existing:
+        session.delete(row)
+    session.flush()
+
+    for item in items:
+        key = item.get("date")
+        if not isinstance(key, str) or not key.startswith(year_prefix):
+            raise ValueError(f"节假日日期不属于 {year} 年：{key}")
+        session.add(
+            Holiday(
+                date=key,
+                description=str(item.get("description", "")),
+                is_makeup=bool(item.get("is_makeup", False)),
+            )
+        )
+    session.flush()
+    return list_holidays(session)
+
+
+def delete_holidays_before(session: Session, cutoff_date: str) -> int:
+    """删除截止日期之前的特殊日期，返回删除数量。"""
+    rows = session.scalars(
+        select(Holiday).where(Holiday.date < cutoff_date)
+    ).all()
+    for row in rows:
+        session.delete(row)
+    session.flush()
+    return len(rows)
