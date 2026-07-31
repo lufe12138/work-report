@@ -58,7 +58,7 @@ def normalize_project_titles(report: str, name_map: dict[str, str]) -> str:
     """
     用 project_names.json 强制校正一级标题中文名。
 
-    例如 LLM 写成「示例后端服务（example_backend）」
+    例如 LLM 写成「后端服务（example_backend）」
     会改回「示例后端服务（example_backend）」。
     """
     if not report or not name_map:
