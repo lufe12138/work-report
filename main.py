@@ -95,8 +95,14 @@ def _default_output_path() -> Path:
     return ROOT_DIR / "output" / f"weekly-report-{today}.txt"
 
 
-def run_holiday_check(tz_offset_hours: int = 8) -> int:
-    result = check_last_workday_before_holiday(tz_offset_hours=tz_offset_hours)
+def run_holiday_check(
+    tz_offset_hours: int = 8,
+    workday_overrides: dict[str, bool] | None = None,
+) -> int:
+    result = check_last_workday_before_holiday(
+        tz_offset_hours=tz_offset_hours,
+        workday_overrides=workday_overrides,
+    )
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
     logger.info("%s", result.reason)
     return 0
@@ -118,17 +124,19 @@ def main() -> int:
         logger.warning("初始化数据库失败（将仅影响落库）: %s", exc)
 
     if args.check_holiday:
+        workday_overrides = None
         try:
             with session_scope() as session:
                 raw = settings_service.get_all_settings_map(session)
                 tz = int(raw.get("timezone_offset_hours") or 8)
+                workday_overrides = settings_service.get_special_dates(session)
         except Exception:  # noqa: BLE001
             try:
                 settings = load_settings(args.env, require_llm=False)
                 tz = settings.timezone_offset_hours
             except Exception:  # noqa: BLE001
                 tz = 8
-        return run_holiday_check(tz)
+        return run_holiday_check(tz, workday_overrides)
 
     if args.test_dingtalk:
         try:

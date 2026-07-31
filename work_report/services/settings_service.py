@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from work_report.config import Settings
-from work_report.db.models import AppSetting, ProjectName, utcnow
+from work_report.db.models import AppSetting, Holiday, ProjectName, utcnow
 from work_report.db.seed import DEFAULTS, SETTING_KEYS
 
 SECRET_KEYS = frozenset(
@@ -182,3 +182,66 @@ def delete_project_name(session: Session, project_key: str) -> bool:
     session.delete(row)
     session.flush()
     return True
+
+
+def get_special_dates(session: Session) -> dict[str, bool]:
+    """获取特殊日期：date -> 是否为调休工作日。"""
+    rows = session.scalars(select(Holiday)).all()
+    return {r.date: r.is_makeup for r in rows}
+
+
+def upsert_holiday(session: Session, date: str, description: str, is_makeup: bool = False) -> None:
+    row = session.get(Holiday, date)
+    if row is None:
+        session.add(
+            Holiday(date=date, description=description, is_makeup=is_makeup)
+        )
+    else:
+        row.description = description
+        row.is_makeup = is_makeup
+    session.flush()
+
+
+def delete_holiday(session: Session, date: str) -> bool:
+    row = session.get(Holiday, date)
+    if row is None:
+        return False
+    session.delete(row)
+    session.flush()
+    return True
+
+
+def list_holidays(session: Session) -> list[dict[str, str | bool]]:
+    """列出所有节假日。"""
+    rows = session.scalars(select(Holiday).order_by(Holiday.date)).all()
+    return [
+        {
+            "date": r.date,
+            "description": r.description,
+            "is_makeup": r.is_makeup,
+        }
+        for r in rows
+    ]
+
+
+def save_holidays(
+    session: Session,
+    items: list[dict[str, str | bool]],
+) -> list[dict[str, str | bool]]:
+    """保存节假日列表（替换所有）。"""
+    existing = session.scalars(select(Holiday)).all()
+    for row in existing:
+        session.delete(row)
+    session.flush()
+    for item in items:
+        key = item.get("date")
+        if isinstance(key, str) and key:
+            session.add(
+                Holiday(
+                    date=key,
+                    description=str(item.get("description", "")),
+                    is_makeup=bool(item.get("is_makeup", False)),
+                )
+            )
+    session.flush()
+    return list_holidays(session)

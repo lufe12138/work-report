@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, Index
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from work_report.timeutil import now_naive as utcnow
@@ -92,3 +92,11 @@ class RunLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     run: Mapped[Run] = relationship(back_populates="logs")
+
+
+class Holiday(Base):
+    __tablename__ = "holidays"
+
+    date: Mapped[str] = mapped_column(String(10), primary_key=True)
+    description: Mapped[str] = mapped_column(String(128), default="")
+    is_makeup: Mapped[bool] = mapped_column(Boolean, default=False)

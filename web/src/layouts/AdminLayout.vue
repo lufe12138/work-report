@@ -28,6 +28,10 @@
           <el-icon><Setting /></el-icon>
           <span>系统配置</span>
         </el-menu-item>
+        <el-menu-item index="/holidays">
+          <el-icon><Calendar /></el-icon>
+          <span>节假日配置</span>
+        </el-menu-item>
         <el-menu-item index="/project-names">
           <el-icon><Collection /></el-icon>
           <span>项目名称</span>
@@ -61,6 +65,7 @@ const title = computed(() => {
     runs: "运行记录",
     "run-detail": "运行详情",
     config: "系统配置",
+    holidays: "节假日配置",
     "project-names": "项目名称",
   };
   return map[String(route.name)] || "Work Report";

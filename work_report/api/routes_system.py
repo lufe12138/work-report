@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from datetime import date as calendar_date
+from typing import Self
+
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from work_report.api.deps import DbSession
 from work_report.holiday import check_last_workday_before_holiday
@@ -23,7 +27,10 @@ def holiday_status(db: DbSession) -> dict:
         tz = int(raw.get("timezone_offset_hours") or 8)
     except ValueError:
         tz = 8
-    result = check_last_workday_before_holiday(tz_offset_hours=tz)
+    result = check_last_workday_before_holiday(
+        tz_offset_hours=tz,
+        workday_overrides=settings_service.get_special_dates(db),
+    )
     return result.to_dict()
 
 
@@ -47,3 +54,67 @@ def dashboard(db: DbSession) -> dict:
     except Exception as exc:  # noqa: BLE001
         data["holiday"] = {"error": str(exc)}
     return data
+
+
+class HolidayItem(BaseModel):
+    date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    description: str = Field(max_length=128)
+    is_makeup: bool = False
+
+    @field_validator("date")
+    @classmethod
+    def validate_date(cls, value: str) -> str:
+        try:
+            calendar_date.fromisoformat(value)
+        except ValueError as exc:
+            raise ValueError("日期必须是有效的 YYYY-MM-DD 日期") from exc
+        return value
+
+    @field_validator("description")
+    @classmethod
+    def normalize_description(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("描述不能为空")
+        return normalized
+
+
+class HolidayList(BaseModel):
+    items: list[HolidayItem]
+
+    @model_validator(mode="after")
+    def validate_unique_dates(self) -> Self:
+        dates = [item.date for item in self.items]
+        if len(dates) != len(set(dates)):
+            raise ValueError("节假日日期不能重复")
+        return self
+
+
+@router.get("/holidays")
+def get_holidays(db: DbSession) -> dict:
+    return {"items": settings_service.list_holidays(db)}
+
+
+@router.put("/holidays")
+def put_holidays(body: HolidayList, db: DbSession) -> dict:
+    items = [i.model_dump() for i in body.items]
+    return {"items": settings_service.save_holidays(db, items)}
+
+
+@router.post("/holidays")
+def post_holiday(body: HolidayItem, db: DbSession) -> dict:
+    settings_service.upsert_holiday(
+        db,
+        body.date,
+        body.description,
+        body.is_makeup,
+    )
+    return {"ok": True, "item": body.model_dump()}
+
+
+@router.delete("/holidays/{date}")
+def delete_holiday_route(date: str, db: DbSession) -> dict:
+    ok = settings_service.delete_holiday(db, date)
+    if not ok:
+        raise HTTPException(status_code=404, detail="节假日不存在")
+    return {"ok": True}

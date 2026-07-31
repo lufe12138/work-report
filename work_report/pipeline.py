@@ -15,7 +15,7 @@ from work_report.dingtalk_sender import DingTalkSender
 from work_report.gitlab_fetcher import GitLabFetcher
 from work_report.holiday import check_last_workday_before_holiday
 from work_report.llm_summarizer import LLMSummarizer
-from work_report.services.settings_service import build_settings
+from work_report.services.settings_service import build_settings, get_special_dates
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +88,8 @@ def execute_run(run_id: int) -> PipelineResult:
 
         if if_last_workday:
             holiday = check_last_workday_before_holiday(
-                tz_offset_hours=settings.timezone_offset_hours
+                tz_offset_hours=settings.timezone_offset_hours,
+                workday_overrides=get_special_dates(session),
             )
             reason = holiday.reason
             run.holiday_reason = reason

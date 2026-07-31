@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 
@@ -84,19 +85,26 @@ def _to_date(value: date | datetime | str | None, tz: timezone) -> date:
     return datetime.strptime(value, "%Y-%m-%d").date()
 
 
-def is_workday(day: date | datetime | str, *, tz_offset_hours: int = 8) -> bool:
+def is_workday(
+    day: date | datetime | str,
+    *,
+    tz_offset_hours: int = 8,
+    workday_overrides: Mapping[str, bool] | None = None,
+) -> bool:
     """判断指定日期是否为工作日。"""
     tz = timezone(timedelta(hours=tz_offset_hours))
     d = _to_date(day, tz)
     date_str = d.isoformat()
 
-    if date_str in MAKEUP_WORKDAYS:
-        return True
-    if date_str in HOLIDAYS:
-        return False
-    if d.weekday() >= 5:  # 周六/周日
-        return False
-    return True
+    if workday_overrides is not None:
+        if date_str in workday_overrides:
+            return workday_overrides[date_str]
+    else:
+        if date_str in MAKEUP_WORKDAYS:
+            return True
+        if date_str in HOLIDAYS:
+            return False
+    return d.weekday() < 5
 
 
 @dataclass(frozen=True)
@@ -129,6 +137,7 @@ def check_last_workday_before_holiday(
     day: date | datetime | str | None = None,
     *,
     tz_offset_hours: int = 8,
+    workday_overrides: Mapping[str, bool] | None = None,
 ) -> HolidayCheckResult:
     """
     判断「今天」是否为放假前最后一个工作日。
@@ -139,8 +148,16 @@ def check_last_workday_before_holiday(
     today = _to_date(day, tz)
     tomorrow = today + timedelta(days=1)
 
-    today_work = is_workday(today, tz_offset_hours=tz_offset_hours)
-    tomorrow_work = is_workday(tomorrow, tz_offset_hours=tz_offset_hours)
+    today_work = is_workday(
+        today,
+        tz_offset_hours=tz_offset_hours,
+        workday_overrides=workday_overrides,
+    )
+    tomorrow_work = is_workday(
+        tomorrow,
+        tz_offset_hours=tz_offset_hours,
+        workday_overrides=workday_overrides,
+    )
     is_last = today_work and not tomorrow_work
 
     if is_last:

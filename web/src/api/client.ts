@@ -96,3 +96,28 @@ export async function getHoliday() {
   const { data } = await client.get("/system/holiday");
   return data;
 }
+
+export interface HolidayItem {
+  date: string;
+  description: string;
+  is_makeup: boolean;
+}
+
+interface HolidayListResponse {
+  items: HolidayItem[];
+}
+
+export async function getHolidays(): Promise<HolidayListResponse> {
+  const { data } = await client.get("/holidays");
+  return data as HolidayListResponse;
+}
+
+export async function saveHolidays(items: HolidayItem[]): Promise<HolidayListResponse> {
+  const { data } = await client.put("/holidays", { items });
+  return data as HolidayListResponse;
+}
+
+export async function deleteHoliday(date: string) {
+  const { data } = await client.delete(`/holidays/${encodeURIComponent(date)}`);
+  return data;
+}
