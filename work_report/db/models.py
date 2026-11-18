@@ -26,6 +26,7 @@ class ProjectName(Base):
     __tablename__ = "project_names"
 
     project_key: Mapped[str] = mapped_column(String(256), primary_key=True)
+    project_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     display_name: Mapped[str] = mapped_column(String(256), default="")
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 

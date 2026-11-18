@@ -44,7 +44,7 @@ def holiday_status(db: DbSession) -> dict:
 def dashboard(db: DbSession) -> dict:
     data = run_service.dashboard(db)
     public = settings_service.get_public_config(db)
-    required = ["gitlab_url", "gitlab_token", "author_email", "project_ids", "llm_api_key"]
+    required = ["gitlab_url", "gitlab_token", "author_email", "llm_api_key"]
     config_ready = True
     for key in required:
         val = public.get(key)
@@ -53,6 +53,9 @@ def dashboard(db: DbSession) -> dict:
                 config_ready = False
         elif not val:
             config_ready = False
+    legacy_project_ids = str(public.get("project_ids") or "").strip()
+    if not settings_service.get_configured_project_ids(db) and not legacy_project_ids:
+        config_ready = False
     data["config_ready"] = config_ready
     try:
         holiday = holiday_status(db)

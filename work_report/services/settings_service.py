@@ -44,6 +44,16 @@ def get_project_name_map(session: Session) -> dict[str, str]:
     return {r.project_key: r.display_name for r in rows if r.project_key and r.display_name}
 
 
+def get_configured_project_ids(session: Session) -> list[int]:
+    """获取项目名称页中已配置的 GitLab 项目 ID。"""
+    rows = session.scalars(
+        select(ProjectName.project_id)
+        .where(ProjectName.project_id.is_not(None))
+        .order_by(ProjectName.project_key)
+    ).all()
+    return list(dict.fromkeys(int(project_id) for project_id in rows if project_id is not None))
+
+
 def get_public_config(session: Session) -> dict[str, Any]:
     raw = get_all_settings_map(session)
     public: dict[str, Any] = {}
@@ -107,12 +117,13 @@ def build_settings(session: Session, *, require_llm: bool = True) -> Settings:
     if require_llm and not llm_api_key:
         raise ValueError("缺少必要配置项: llm_api_key，请在管理页或 .env 中设置")
 
-    project_ids_raw = req("project_ids")
-    project_ids: list[int] = []
-    for part in project_ids_raw.split(","):
-        part = part.strip()
-        if part:
-            project_ids.append(int(part))
+    project_ids = get_configured_project_ids(session)
+    if not project_ids:
+        project_ids_raw = req("project_ids")
+        for part in project_ids_raw.split(","):
+            part = part.strip()
+            if part:
+                project_ids.append(int(part))
     if not project_ids:
         raise ValueError("project_ids 为空，请至少配置一个项目 ID")
 
@@ -139,42 +150,102 @@ def build_settings(session: Session, *, require_llm: bool = True) -> Settings:
     )
 
 
-def list_project_names(session: Session) -> list[dict[str, str]]:
+def list_project_names(session: Session) -> list[dict[str, str | int | None]]:
     rows = session.scalars(
         select(ProjectName).order_by(ProjectName.project_key)
     ).all()
     return [
-        {"project_key": r.project_key, "display_name": r.display_name}
+        {
+            "project_id": r.project_id,
+            "project_key": r.project_key,
+            "display_name": r.display_name,
+        }
         for r in rows
     ]
 
 
-def upsert_project_name(session: Session, project_key: str, display_name: str) -> None:
+def _normalize_project_id(value: object) -> int | None:
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    try:
+        project_id = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("project_id 必须是正整数") from exc
+    if project_id <= 0:
+        raise ValueError("project_id 必须是正整数")
+    return project_id
+
+
+def upsert_project_name(
+    session: Session,
+    project_key: str,
+    display_name: str,
+    project_id: int | None = None,
+) -> None:
     key = project_key.strip()
     name = display_name.strip()
     if not key or not name:
         raise ValueError("project_key 与 display_name 均不能为空")
+    normalized_project_id = _normalize_project_id(project_id)
+    if normalized_project_id is not None:
+        duplicate = session.scalar(
+            select(ProjectName).where(
+                ProjectName.project_id == normalized_project_id,
+                ProjectName.project_key != key,
+            )
+        )
+        if duplicate is not None:
+            raise ValueError(f"项目 ID {normalized_project_id} 已被项目 {duplicate.project_key} 使用")
     now = utcnow()
     row = session.get(ProjectName, key)
     if row is None:
-        session.add(ProjectName(project_key=key, display_name=name, updated_at=now))
+        session.add(
+            ProjectName(
+                project_id=normalized_project_id,
+                project_key=key,
+                display_name=name,
+                updated_at=now,
+            )
+        )
     else:
+        row.project_id = normalized_project_id
         row.display_name = name
         row.updated_at = now
     session.flush()
 
 
-def replace_project_names(session: Session, items: list[dict[str, str]]) -> list[dict[str, str]]:
+def replace_project_names(
+    session: Session,
+    items: list[dict[str, str | int | None]],
+) -> list[dict[str, str | int | None]]:
+    normalized_items: list[tuple[int | None, str, str]] = []
+    seen_project_ids: set[int] = set()
+    for item in items:
+        key = str(item.get("project_key", "")).strip()
+        name = str(item.get("display_name", "")).strip()
+        if not key or not name:
+            continue
+        project_id = _normalize_project_id(item.get("project_id"))
+        if project_id is not None and project_id in seen_project_ids:
+            raise ValueError(f"项目 ID {project_id} 重复配置")
+        if project_id is not None:
+            seen_project_ids.add(project_id)
+        normalized_items.append((project_id, key, name))
+
     existing = session.scalars(select(ProjectName)).all()
     for row in existing:
         session.delete(row)
     session.flush()
     now = utcnow()
-    for item in items:
-        key = str(item.get("project_key", "")).strip()
-        name = str(item.get("display_name", "")).strip()
-        if key and name:
-            session.add(ProjectName(project_key=key, display_name=name, updated_at=now))
+    for project_id, key, name in normalized_items:
+        session.add(
+            ProjectName(
+                project_id=project_id,
+                project_key=key,
+                display_name=name,
+                updated_at=now,
+            )
+        )
     session.flush()
     return list_project_names(session)
 

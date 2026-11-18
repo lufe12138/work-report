@@ -58,12 +58,22 @@ export async function getProjectNames() {
   return data;
 }
 
-export async function saveProjectNames(items: { project_key: string; display_name: string }[]) {
+export async function saveProjectNames(
+  items: {
+    project_id: number | null;
+    project_key: string;
+    display_name: string;
+  }[],
+) {
   const { data } = await client.put("/project-names", { items });
   return data;
 }
 
-export async function addProjectName(item: { project_key: string; display_name: string }) {
+export async function addProjectName(item: {
+  project_id: number | null;
+  project_key: string;
+  display_name: string;
+}) {
   const { data } = await client.post("/project-names", item);
   return data;
 }

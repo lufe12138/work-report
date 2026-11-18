@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Generator, Iterator
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -69,8 +69,23 @@ def init_db() -> None:
     from work_report.db.seed import seed_if_empty
 
     Base.metadata.create_all(bind=get_engine())
+    _migrate_project_name_id()
     with session_scope() as session:
         seed_if_empty(session)
+
+
+def _migrate_project_name_id() -> None:
+    """为旧版 project_names 表补充可选的 GitLab 项目 ID。"""
+    engine = get_engine()
+    inspector = inspect(engine)
+    columns = {column["name"] for column in inspector.get_columns("project_names")}
+    if "project_id" in columns:
+        return
+
+    with engine.begin() as connection:
+        connection.execute(
+            text("ALTER TABLE project_names ADD COLUMN project_id INTEGER")
+        )
 
 
 @contextmanager

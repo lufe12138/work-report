@@ -8,7 +8,6 @@ interface ConfigForm {
   gitlab_url: string;
   gitlab_token: string;
   author_email: string;
-  project_ids: string;
   llm_api_key: string;
   llm_base_url: string;
   llm_model: string;
@@ -31,7 +30,6 @@ const form = reactive<ConfigForm>({
   gitlab_url: "",
   gitlab_token: "",
   author_email: "",
-  project_ids: "",
   llm_api_key: "",
   llm_base_url: "",
   llm_model: "",
@@ -142,14 +140,7 @@ onMounted(load);
       <el-form-item label="作者邮箱">
         <el-input v-model="form.author_email" />
       </el-form-item>
-      <el-form-item label="项目 IDs">
-        <el-input
-          v-model="form.project_ids"
-          type="textarea"
-          :rows="2"
-          placeholder="逗号分隔，如 353,352,350"
-        />
-      </el-form-item>
+      <p class="muted">项目 ID 请在“项目名称”页面配置。</p>
 
       <el-divider content-position="left">LLM</el-divider>
       <el-form-item label="API Key">
