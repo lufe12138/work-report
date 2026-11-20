@@ -4,14 +4,20 @@ from __future__ import annotations
 
 import logging
 import re
+import time
+from typing import Any
 
-from openai import OpenAI
+from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAI
 
 from work_report.config import Settings
 from work_report.default_prompts import DEFAULT_WEEKLY_REPORT_PROMPT
 from work_report.gitlab_fetcher import FetchResult
 
 logger = logging.getLogger(__name__)
+
+_RETRYABLE_STATUS_CODES = frozenset({408, 429, 500, 502, 503, 504})
+_LLM_MAX_ATTEMPTS = 3
+_LLM_RETRY_DELAYS_SECONDS = (10, 20)
 
 # LLM 配置页测活提示词
 PING_PROMPT = "计算2+3等于多少"
@@ -113,7 +119,33 @@ class LLMSummarizer:
             api_key=settings.llm_api_key,
             base_url=settings.llm_base_url,
             timeout=settings.llm_timeout,
+            max_retries=0,
         )
+
+    def _create_completion(self, **kwargs: Any) -> Any:
+        """等待限流队列恢复后重试临时 LLM 错误。"""
+        for attempt in range(1, _LLM_MAX_ATTEMPTS + 1):
+            try:
+                return self.client.chat.completions.create(**kwargs)
+            except (APIConnectionError, APITimeoutError, APIStatusError) as exc:
+                status_code = getattr(exc, "status_code", None)
+                retryable = (
+                    isinstance(exc, (APIConnectionError, APITimeoutError))
+                    or status_code in _RETRYABLE_STATUS_CODES
+                )
+                if not retryable or attempt == _LLM_MAX_ATTEMPTS:
+                    raise
+
+                delay = _LLM_RETRY_DELAYS_SECONDS[attempt - 1]
+                logger.warning(
+                    "LLM 请求失败，将在 %s 秒后重试（%s/%s，status=%s）: %s",
+                    delay,
+                    attempt,
+                    _LLM_MAX_ATTEMPTS - 1,
+                    status_code,
+                    exc,
+                )
+                time.sleep(delay)
 
     def build_user_prompt(self, fetch_result: FetchResult) -> str:
         """构造用户侧提示词。"""
@@ -147,7 +179,7 @@ class LLMSummarizer:
             self.settings.llm_base_url,
             prompt,
         )
-        response = self.client.chat.completions.create(
+        response = self._create_completion(
             model=self.settings.llm_model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0,
@@ -176,7 +208,7 @@ class LLMSummarizer:
             fetch_result.total_commits,
         )
 
-        response = self.client.chat.completions.create(
+        response = self._create_completion(
             model=self.settings.llm_model,
             messages=[
                 {
