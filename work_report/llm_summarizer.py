@@ -7,7 +7,7 @@ import re
 import time
 from typing import Any
 
-from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAI
+from openai import APIConnectionError, APIStatusError, OpenAI
 
 from work_report.config import Settings
 from work_report.default_prompts import DEFAULT_WEEKLY_REPORT_PROMPT
@@ -110,6 +110,10 @@ def ensure_report_header(report: str, week_start: str, week_end: str) -> str:
     return f"{header}\n\n{body}"
 
 
+class _IncompleteStreamError(RuntimeError):
+    """模型响应在结束前中断，可以重新请求。"""
+
+
 class LLMSummarizer:
     """调用 OpenAI 兼容 API 将提交记录归纳为周报。"""
 
@@ -122,18 +126,25 @@ class LLMSummarizer:
             max_retries=0,
         )
 
-    def _create_completion(self, **kwargs: Any) -> Any:
-        """等待限流队列恢复后重试临时 LLM 错误。"""
+    def _complete_text(self, *, stream: bool = False, **kwargs: Any) -> str:
+        """临时错误发生在请求或读取响应时，都从头重试。"""
         for attempt in range(1, _LLM_MAX_ATTEMPTS + 1):
             try:
-                return self.client.chat.completions.create(**kwargs)
-            except (APIConnectionError, APITimeoutError, APIStatusError) as exc:
+                if stream:
+                    content = self._read_stream(**kwargs)
+                else:
+                    response = self.client.chat.completions.create(**kwargs)
+                    content = response.choices[0].message.content
+                text = (content or "").strip()
+                if not text:
+                    raise RuntimeError("LLM 返回空内容")
+                return text
+            except (APIConnectionError, APIStatusError, _IncompleteStreamError) as exc:
                 status_code = getattr(exc, "status_code", None)
-                retryable = (
-                    isinstance(exc, (APIConnectionError, APITimeoutError))
-                    or status_code in _RETRYABLE_STATUS_CODES
-                )
-                if not retryable or attempt == _LLM_MAX_ATTEMPTS:
+                if attempt == _LLM_MAX_ATTEMPTS or (
+                    isinstance(exc, APIStatusError)
+                    and status_code not in _RETRYABLE_STATUS_CODES
+                ):
                     raise
 
                 delay = _LLM_RETRY_DELAYS_SECONDS[attempt - 1]
@@ -146,6 +157,31 @@ class LLMSummarizer:
                     exc,
                 )
                 time.sleep(delay)
+
+    def _read_stream(self, **kwargs: Any) -> str:
+        """从模型网关分段接收正文，在模型确认正常结束后使用。"""
+        fragments: list[str] = []
+        finish_reason = None
+        with self.client.chat.completions.create(stream=True, **kwargs) as response:
+            try:
+                for chunk in response:
+                    if not chunk.choices:
+                        continue
+                    choice = chunk.choices[0]
+                    if choice.delta and choice.delta.content:
+                        fragments.append(choice.delta.content)
+                    finish_reason = choice.finish_reason or finish_reason
+            except APIStatusError:
+                raise
+            except Exception as exc:
+                # 读取开始后，SDK 可能直接抛出传输或解析异常。
+                raise _IncompleteStreamError(f"读取 LLM 周报响应失败: {exc}") from exc
+
+        if finish_reason is None:
+            raise _IncompleteStreamError("LLM 连接在周报生成完成前断开")
+        if finish_reason != "stop":
+            raise RuntimeError(f"LLM 周报生成未正常结束: {finish_reason}")
+        return "".join(fragments)
 
     def build_user_prompt(self, fetch_result: FetchResult) -> str:
         """构造用户侧提示词。"""
@@ -179,16 +215,12 @@ class LLMSummarizer:
             self.settings.llm_base_url,
             prompt,
         )
-        response = self._create_completion(
+        return self._complete_text(
             model=self.settings.llm_model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0,
             max_tokens=64,
         )
-        content = (response.choices[0].message.content or "").strip()
-        if not content:
-            raise RuntimeError("LLM 返回空内容")
-        return content
 
     def summarize(self, fetch_result: FetchResult) -> str:
         """根据提交结果生成周报正文。"""
@@ -208,7 +240,8 @@ class LLMSummarizer:
             fetch_result.total_commits,
         )
 
-        response = self._create_completion(
+        # 周报篇幅随项目数变化，使用模型默认的输出上限。
+        content = self._complete_text(
             model=self.settings.llm_model,
             messages=[
                 {
@@ -221,10 +254,7 @@ class LLMSummarizer:
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.3,
-            max_tokens=2048,
+            stream=True,
         )
 
-        content = (response.choices[0].message.content or "").strip()
-        if not content:
-            raise RuntimeError("LLM 返回空内容")
         return self.postprocess(content, fetch_result)
